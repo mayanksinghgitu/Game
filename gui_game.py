@@ -1,14 +1,23 @@
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
 import random
+import json
+import os
 import threading
-import json  # ## NEW FEATURE ##
-import os    # ## NEW FEATURE ##
 
-# --- Centralized Constants for easy configuration ---
+# --- Sound playback (optional, remove if not used) ---
+try:
+    from playsound import playsound
+    SOUND_ENABLED = True
+except ImportError:
+    SOUND_ENABLED = False
+    print("playsound library not found. Sounds will be disabled.")
+    print("To enable sounds, run: pip install playsound")
+
+# --- Constants ---
 BG_COLOR = "#1e1e2f"
 FONT_COLOR = "#f9f9f9"
-STATS_FILE = "stats.json" # ## NEW FEATURE ##
+STATS_FILE = "stats.json"
 
 class GameApp(tk.Tk):
     def __init__(self):
@@ -18,39 +27,53 @@ class GameApp(tk.Tk):
         self.REV_CHOICE_MAP = {1: "Snake", 0: "Gun", -1: "Water"}
         self.WINNING_COMBOS = {(1, -1), (-1, 0), (0, 1)}
 
-        self._load_stats() # ## NEW FEATURE ##
+        self.sounds = {
+            "click": "sounds/click.wav",
+            "win": "sounds/win.wav",
+            "loss": "sounds/loss.wav"
+        }
+
+        self._load_stats()
         self._setup_ui()
         self.reset_game()
 
-        ## NEW FEATURE: Save stats when the user closes the window ##
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
+    def _play_sound(self, sound_name):
+        if not SOUND_ENABLED:
+            return
+        try:
+            threading.Thread(target=playsound, args=(self.sounds[sound_name],), daemon=True).start()
+        except Exception as e:
+            pass
+
     def _load_stats(self):
-        """Loads all-time stats from the JSON file."""
         if os.path.exists(STATS_FILE):
-            with open(STATS_FILE, "r") as f:
-                self.all_time_stats = json.load(f)
+            try:
+                with open(STATS_FILE, "r") as f:
+                    self.all_time_stats = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                 self.all_time_stats = {"Player_Wins": 0, "CPU_Wins": 0}
         else:
             self.all_time_stats = {"Player_Wins": 0, "CPU_Wins": 0}
 
     def _save_stats(self):
-        """Saves the current all-time stats to the JSON file."""
-        with open(STATS_FILE, "w") as f:
-            json.dump(self.all_time_stats, f, indent=4)
+        try:
+            with open(STATS_FILE, "w") as f:
+                json.dump(self.all_time_stats, f, indent=4)
+        except IOError:
+            pass
 
     def _on_closing(self):
-        """Handles the window close event."""
         self._save_stats()
         self.destroy()
 
     def _setup_ui(self):
-        """Helper method to create all the widgets."""
         self.title("Snake Water Gun Game")
-        self.geometry("500x800") # Increased height for the log
+        self.geometry("500x800")
         self.config(bg=BG_COLOR)
         self.resizable(False, False)
 
-        ## NEW FEATURE: All-time stats display ##
         self.all_time_stats_label = tk.Label(self, text="", font=("Helvetica", 12), fg="#bdc3c7", bg=BG_COLOR)
         self.all_time_stats_label.pack(pady=(10,0))
         self.update_all_time_stats_label()
@@ -67,14 +90,13 @@ class GameApp(tk.Tk):
         self.round_label = tk.Label(self, text="", font=("Helvetica", 14), fg="#f1c40f", bg=BG_COLOR)
         self.round_label.pack(pady=10)
 
-        self.button_canvas = tk.Canvas(self, width=450, height=200, bg=BG_COLOR, highlightthickness=0) # Resized canvas
+        self.button_canvas = tk.Canvas(self, width=450, height=200, bg=BG_COLOR, highlightthickness=0)
         self.button_canvas.pack()
 
         self._create_round_button(self.button_canvas, 80, 100, 50, "Snake", "#8e44ad", lambda: self.play("S"))
         self._create_round_button(self.button_canvas, 225, 100, 50, "Water", "#16a085", lambda: self.play("W"))
         self._create_round_button(self.button_canvas, 370, 100, 50, "Gun", "#c0392b", lambda: self.play("G"))
 
-        ## NEW FEATURE: Game History Log ##
         log_frame = tk.Frame(self, bg=BG_COLOR)
         log_frame.pack(pady=10, padx=20, fill="x")
         log_label = tk.Label(log_frame, text="Game Log", font=("Helvetica", 12, "bold"), fg=FONT_COLOR, bg=BG_COLOR)
@@ -82,19 +104,17 @@ class GameApp(tk.Tk):
         self.game_log = scrolledtext.ScrolledText(log_frame, height=5, width=50, bg="#2c3e50", fg="white", state="disabled")
         self.game_log.pack()
 
-        developer_label = tk.Label(self, text="Developed by Mayank Singh", font=("Helvetica", 12, "bold"),
-                                   fg="#bdc3c7", bg=BG_COLOR)
+        developer_label = tk.Label(self, text="Developed by Mayank Singh", font=("Helvetica", 12, "bold"), fg="#bdc3c7", bg=BG_COLOR)
         developer_label.pack(side="bottom", pady=10)
 
     def add_to_log(self, message):
-        """Adds a message to the game log and auto-scrolls."""
         self.game_log.config(state="normal")
         self.game_log.insert(tk.END, message + "\n")
         self.game_log.config(state="disabled")
-        self.game_log.see(tk.END) # Auto-scroll
+        self.game_log.see(tk.END)
 
     def play(self, user_choice_str):
-        # ... (This method remains the same)
+        self._play_sound("click")
         self._set_buttons_state("disabled")
         user_choice_num = self.CHOICE_MAP[user_choice_str]
         self.result_label.config(text="Computer is choosing...")
@@ -102,7 +122,6 @@ class GameApp(tk.Tk):
         self._animate_cpu_choice(15, user_choice_num)
 
     def _animate_cpu_choice(self, counter, user_choice):
-        # ... (This method remains the same)
         if counter > 0:
             temp_choice = random.choice([-1, 0, 1])
             self.choice_label.config(text=f"Computer: {self.REV_CHOICE_MAP[temp_choice]}")
@@ -118,7 +137,6 @@ class GameApp(tk.Tk):
         cpu_str = self.REV_CHOICE_MAP[computer_choice]
         
         self.choice_label.config(text=f"You: {user_str} | Computer: {cpu_str}")
-
         log_msg = f"Round {self.current_round}: You ({user_str}) vs CPU ({cpu_str}). "
 
         if user_choice == computer_choice:
@@ -127,13 +145,15 @@ class GameApp(tk.Tk):
         elif (user_choice, computer_choice) in self.WINNING_COMBOS:
             self.result_label.config(text="You WIN this Round!", fg="#2ecc71")
             self.match_score["Player"] += 1
+            self._play_sound("win")
             log_msg += "Result: You Win!"
         else:
             self.result_label.config(text="You LOSE this Round!", fg="#e74c3c")
             self.match_score["CPU"] += 1
+            self._play_sound("loss")
             log_msg += "Result: You Lose!"
         
-        self.add_to_log(log_msg) # ## NEW FEATURE ##
+        self.add_to_log(log_msg)
         self.update_score_labels()
 
         if self.match_score["Player"] == 3 or self.match_score["CPU"] == 3:
@@ -142,38 +162,33 @@ class GameApp(tk.Tk):
             self._set_buttons_state("normal")
 
     def update_all_time_stats_label(self):
-        """Updates the label that shows the all-time stats."""
         stats = self.all_time_stats
         self.all_time_stats_label.config(text=f"All-Time Record: Player {stats['Player_Wins']} - {stats['CPU_Wins']} CPU")
 
     def game_over(self):
-        """Handles the end of a match and updates all-time stats."""
         is_player_winner = self.match_score["Player"] == 3
         winner = "Player" if is_player_winner else "CPU"
 
-        ## NEW FEATURE: Update and save all-time stats ##
         if is_player_winner:
             self.all_time_stats["Player_Wins"] += 1
         else:
             self.all_time_stats["CPU_Wins"] += 1
         self.update_all_time_stats_label()
-        self._save_stats() # Save immediately after a match concludes
+        self._save_stats()
 
         answer = messagebox.askyesno("GAME OVER", f"{winner} wins the match!\n\nDo you want to play again?")
         if answer:
             self.reset_game()
         else:
-            self._on_closing() # Use the safe closing method
+            self._on_closing()
 
     def reset_game(self):
-        """Resets scores and labels for a new match."""
         self.match_score = {"Player": 0, "CPU": 0}
         self.current_round = 0
         self.update_score_labels()
         self.result_label.config(text="New Match! Best of 5.", fg=FONT_COLOR)
         self.choice_label.config(text="First to 3 wins.")
         
-        ## NEW FEATURE: Clear the game log ##
         self.game_log.config(state="normal")
         self.game_log.delete('1.0', tk.END)
         self.game_log.config(state="disabled")
@@ -181,8 +196,6 @@ class GameApp(tk.Tk):
         self.add_to_log("New match started. Good luck!")
         self._set_buttons_state("normal")
     
-    # Other methods like update_score_labels, _set_buttons_state, _create_round_button...
-    # (These are included in the full code block but omitted here for brevity)
     def update_score_labels(self):
         self.match_score_label.config(text=f"Player: {self.match_score['Player']} | CPU: {self.match_score['CPU']}")
         self.round_label.config(text=f"Round {self.current_round} / 5")
