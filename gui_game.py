@@ -1,100 +1,205 @@
 import tkinter as tk
+from tkinter import messagebox, scrolledtext
 import random
+import threading
+import json  # ## NEW FEATURE ##
+import os    # ## NEW FEATURE ##
 
-MYdec = {"S": 1, "W": -1, "G": 0}
-REV = {1: "Snake", 0: "Gun", -1: "Water"}
+# --- Centralized Constants for easy configuration ---
+BG_COLOR = "#1e1e2f"
+FONT_COLOR = "#f9f9f9"
+STATS_FILE = "stats.json" # ## NEW FEATURE ##
 
-root = tk.Tk()
-root.title("Snake Water Gun Game")
-root.geometry("500x650")
-root.config(bg="#1e1e2f")
+class GameApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
 
-score = {"Win": 0, "Loss": 0, "Draw": 0}
+        self.CHOICE_MAP = {"S": 1, "W": -1, "G": 0}
+        self.REV_CHOICE_MAP = {1: "Snake", 0: "Gun", -1: "Water"}
+        self.WINNING_COMBOS = {(1, -1), (-1, 0), (0, 1)}
 
-result_label = tk.Label(root, text="", font=("Helvetica", 20, "bold"), fg="#f9f9f9", bg="#1e1e2f")
-result_label.pack(pady=20)
+        self._load_stats() # ## NEW FEATURE ##
+        self._setup_ui()
+        self.reset_game()
 
-choice_label = tk.Label(root, text="", font=("Helvetica", 14), fg="#dcdcdc", bg="#1e1e2f")
-choice_label.pack(pady=10)
+        ## NEW FEATURE: Save stats when the user closes the window ##
+        self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
-score_label = tk.Label(root, text="Wins: 0 | Losses: 0 | Draws: 0", font=("Helvetica", 14),
-                       fg="#f1c40f", bg="#1e1e2f")
-score_label.pack(pady=10)
-
-def update_score():
-    score_label.config(text=f"Wins: {score['Win']} | Losses: {score['Loss']} | Draws: {score['Draw']}")
-
-def play(user_choice):
-    you = MYdec[user_choice]
-    result_label.config(text="Computer is thinking...", fg="#f1c40f")
-    choice_label.config(text="")
-    root.after(1000, lambda: show_result(you))
-
-def show_result(you):
-    computer = random.choice([-1, 0, 1])
-    choice_text = f"Your Choice: {REV[you]}, Computer Choice: {REV[computer]}"
-    choice_label.config(text=choice_text)
-    if you == computer:
-        result_label.config(text="DRAW !!!", fg="#3498db")
-        score["Draw"] += 1
-    elif (you == 1 and computer == -1) or \
-         (you == -1 and computer == 0) or \
-         (you == 0 and computer == 1):
-        result_label.config(text="You WIN !!", fg="#2ecc71")
-        score["Win"] += 1
-        glow_animation(result_label)
-    else:
-        result_label.config(text="You LOSS !!", fg="#e74c3c")
-        score["Loss"] += 1
-    update_score()
-
-def glow_animation(label):
-    def flash(count=0):
-        if count < 6:
-            color = "#2ecc71" if count % 2 == 0 else "#1e1e2f"
-            label.config(fg=color)
-            root.after(150, lambda: flash(count+1))
+    def _load_stats(self):
+        """Loads all-time stats from the JSON file."""
+        if os.path.exists(STATS_FILE):
+            with open(STATS_FILE, "r") as f:
+                self.all_time_stats = json.load(f)
         else:
-            label.config(fg="#2ecc71")
-    flash()
+            self.all_time_stats = {"Player_Wins": 0, "CPU_Wins": 0}
 
-def create_round_button(canvas, x, y, r, text, color, cmd):
-    circle = canvas.create_oval(x-r, y-r, x+r, y+r, fill=color, outline="white", width=3)
-    label = canvas.create_text(x, y, text=text, fill="white", font=("Helvetica", 12, "bold"))
+    def _save_stats(self):
+        """Saves the current all-time stats to the JSON file."""
+        with open(STATS_FILE, "w") as f:
+            json.dump(self.all_time_stats, f, indent=4)
 
-    def hover_on(event):
-        canvas.itemconfig(circle, fill="#555", outline="#f1c40f")
-    def hover_off(event):
-        canvas.itemconfig(circle, fill=color, outline="white")
+    def _on_closing(self):
+        """Handles the window close event."""
+        self._save_stats()
+        self.destroy()
 
-    canvas.tag_bind(circle, "<Button-1>", lambda e: cmd())
-    canvas.tag_bind(label, "<Button-1>", lambda e: cmd())
-    canvas.tag_bind(circle, "<Enter>", hover_on)
-    canvas.tag_bind(label, "<Enter>", hover_on)
-    canvas.tag_bind(circle, "<Leave>", hover_off)
-    canvas.tag_bind(label, "<Leave>", hover_off)
+    def _setup_ui(self):
+        """Helper method to create all the widgets."""
+        self.title("Snake Water Gun Game")
+        self.geometry("500x800") # Increased height for the log
+        self.config(bg=BG_COLOR)
+        self.resizable(False, False)
 
-canvas = tk.Canvas(root, width=450, height=250, bg="#1e1e2f", highlightthickness=0)
-canvas.pack()
+        ## NEW FEATURE: All-time stats display ##
+        self.all_time_stats_label = tk.Label(self, text="", font=("Helvetica", 12), fg="#bdc3c7", bg=BG_COLOR)
+        self.all_time_stats_label.pack(pady=(10,0))
+        self.update_all_time_stats_label()
 
-create_round_button(canvas, 80, 120, 50, "Snake", "#8e44ad", lambda: play("S"))
-create_round_button(canvas, 225, 120, 50, "Water", "#16a085", lambda: play("W"))
-create_round_button(canvas, 370, 120, 50, "Gun", "#c0392b", lambda: play("G"))
+        self.match_score_label = tk.Label(self, text="", font=("Helvetica", 20, "bold"), fg="#f1c40f", bg=BG_COLOR)
+        self.match_score_label.pack(pady=(5, 0))
 
-def reset_scores():
-    score["Win"] = 0
-    score["Loss"] = 0
-    score["Draw"] = 0
-    update_score()
-    result_label.config(text="", fg="#f9f9f9")
-    choice_label.config(text="")
+        self.result_label = tk.Label(self, text="Choose your weapon!", font=("Helvetica", 14), fg=FONT_COLOR, bg=BG_COLOR)
+        self.result_label.pack(pady=10)
 
-reset_button = tk.Button(root, text="Reset Scores", font=("Helvetica", 12), width=15,
-                         bg="#34495e", fg="white", command=reset_scores, relief="ridge")
-reset_button.pack(pady=20)
+        self.choice_label = tk.Label(self, text="", font=("Helvetica", 14), fg="#dcdcdc", bg=BG_COLOR)
+        self.choice_label.pack(pady=10)
 
-developer_label = tk.Label(root, text="Developed by Mayank Singh",
-                           font=("Helvetica", 12, "bold"), fg="#bdc3c7", bg="#1e1e2f")
-developer_label.pack(side="bottom", pady=10)
+        self.round_label = tk.Label(self, text="", font=("Helvetica", 14), fg="#f1c40f", bg=BG_COLOR)
+        self.round_label.pack(pady=10)
 
-root.mainloop()
+        self.button_canvas = tk.Canvas(self, width=450, height=200, bg=BG_COLOR, highlightthickness=0) # Resized canvas
+        self.button_canvas.pack()
+
+        self._create_round_button(self.button_canvas, 80, 100, 50, "Snake", "#8e44ad", lambda: self.play("S"))
+        self._create_round_button(self.button_canvas, 225, 100, 50, "Water", "#16a085", lambda: self.play("W"))
+        self._create_round_button(self.button_canvas, 370, 100, 50, "Gun", "#c0392b", lambda: self.play("G"))
+
+        ## NEW FEATURE: Game History Log ##
+        log_frame = tk.Frame(self, bg=BG_COLOR)
+        log_frame.pack(pady=10, padx=20, fill="x")
+        log_label = tk.Label(log_frame, text="Game Log", font=("Helvetica", 12, "bold"), fg=FONT_COLOR, bg=BG_COLOR)
+        log_label.pack()
+        self.game_log = scrolledtext.ScrolledText(log_frame, height=5, width=50, bg="#2c3e50", fg="white", state="disabled")
+        self.game_log.pack()
+
+        developer_label = tk.Label(self, text="Developed by Mayank Singh", font=("Helvetica", 12, "bold"),
+                                   fg="#bdc3c7", bg=BG_COLOR)
+        developer_label.pack(side="bottom", pady=10)
+
+    def add_to_log(self, message):
+        """Adds a message to the game log and auto-scrolls."""
+        self.game_log.config(state="normal")
+        self.game_log.insert(tk.END, message + "\n")
+        self.game_log.config(state="disabled")
+        self.game_log.see(tk.END) # Auto-scroll
+
+    def play(self, user_choice_str):
+        # ... (This method remains the same)
+        self._set_buttons_state("disabled")
+        user_choice_num = self.CHOICE_MAP[user_choice_str]
+        self.result_label.config(text="Computer is choosing...")
+        self.choice_label.config(text="")
+        self._animate_cpu_choice(15, user_choice_num)
+
+    def _animate_cpu_choice(self, counter, user_choice):
+        # ... (This method remains the same)
+        if counter > 0:
+            temp_choice = random.choice([-1, 0, 1])
+            self.choice_label.config(text=f"Computer: {self.REV_CHOICE_MAP[temp_choice]}")
+            self.after(75, lambda: self._animate_cpu_choice(counter - 1, user_choice))
+        else:
+            self.show_result(user_choice)
+
+    def show_result(self, user_choice):
+        self.current_round += 1
+        computer_choice = random.choice([-1, 0, 1])
+        
+        user_str = self.REV_CHOICE_MAP[user_choice]
+        cpu_str = self.REV_CHOICE_MAP[computer_choice]
+        
+        self.choice_label.config(text=f"You: {user_str} | Computer: {cpu_str}")
+
+        log_msg = f"Round {self.current_round}: You ({user_str}) vs CPU ({cpu_str}). "
+
+        if user_choice == computer_choice:
+            self.result_label.config(text="This Round is a DRAW!", fg="#3498db")
+            log_msg += "Result: Draw."
+        elif (user_choice, computer_choice) in self.WINNING_COMBOS:
+            self.result_label.config(text="You WIN this Round!", fg="#2ecc71")
+            self.match_score["Player"] += 1
+            log_msg += "Result: You Win!"
+        else:
+            self.result_label.config(text="You LOSE this Round!", fg="#e74c3c")
+            self.match_score["CPU"] += 1
+            log_msg += "Result: You Lose!"
+        
+        self.add_to_log(log_msg) # ## NEW FEATURE ##
+        self.update_score_labels()
+
+        if self.match_score["Player"] == 3 or self.match_score["CPU"] == 3:
+            self.game_over()
+        else:
+            self._set_buttons_state("normal")
+
+    def update_all_time_stats_label(self):
+        """Updates the label that shows the all-time stats."""
+        stats = self.all_time_stats
+        self.all_time_stats_label.config(text=f"All-Time Record: Player {stats['Player_Wins']} - {stats['CPU_Wins']} CPU")
+
+    def game_over(self):
+        """Handles the end of a match and updates all-time stats."""
+        is_player_winner = self.match_score["Player"] == 3
+        winner = "Player" if is_player_winner else "CPU"
+
+        ## NEW FEATURE: Update and save all-time stats ##
+        if is_player_winner:
+            self.all_time_stats["Player_Wins"] += 1
+        else:
+            self.all_time_stats["CPU_Wins"] += 1
+        self.update_all_time_stats_label()
+        self._save_stats() # Save immediately after a match concludes
+
+        answer = messagebox.askyesno("GAME OVER", f"{winner} wins the match!\n\nDo you want to play again?")
+        if answer:
+            self.reset_game()
+        else:
+            self._on_closing() # Use the safe closing method
+
+    def reset_game(self):
+        """Resets scores and labels for a new match."""
+        self.match_score = {"Player": 0, "CPU": 0}
+        self.current_round = 0
+        self.update_score_labels()
+        self.result_label.config(text="New Match! Best of 5.", fg=FONT_COLOR)
+        self.choice_label.config(text="First to 3 wins.")
+        
+        ## NEW FEATURE: Clear the game log ##
+        self.game_log.config(state="normal")
+        self.game_log.delete('1.0', tk.END)
+        self.game_log.config(state="disabled")
+        
+        self.add_to_log("New match started. Good luck!")
+        self._set_buttons_state("normal")
+    
+    # Other methods like update_score_labels, _set_buttons_state, _create_round_button...
+    # (These are included in the full code block but omitted here for brevity)
+    def update_score_labels(self):
+        self.match_score_label.config(text=f"Player: {self.match_score['Player']} | CPU: {self.match_score['CPU']}")
+        self.round_label.config(text=f"Round {self.current_round} / 5")
+
+    def _set_buttons_state(self, state):
+        self.button_canvas.itemconfig("all", state=state)
+
+    def _create_round_button(self, canvas, x, y, r, text, color, cmd):
+        circle = canvas.create_oval(x - r, y - r, x + r, y + r, fill=color, outline="white", width=3)
+        label = canvas.create_text(x, y, text=text, fill="white", font=("Helvetica", 12, "bold"))
+        def on_hover(event): canvas.itemconfig(circle, fill="#555", outline="#f1c40f")
+        def on_leave(event): canvas.itemconfig(circle, fill=color, outline="white")
+        for item in (circle, label):
+            canvas.tag_bind(item, "<Button-1>", lambda e: cmd())
+            canvas.tag_bind(item, "<Enter>", on_hover)
+            canvas.tag_bind(item, "<Leave>", on_leave)
+
+if __name__ == "__main__":
+    app = GameApp()
+    app.mainloop()
